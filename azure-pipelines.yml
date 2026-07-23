@@ -1,0 +1,121 @@
+trigger:
+- main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  pythonVersion: '3.12'
+
+  # Azure DevOps Service Connection Name
+  azureServiceConnection: '<use service connection>'
+
+  # Azure Web App Name
+  webAppName: '<use web app name>'
+
+stages:
+
+#========================================================
+# BUILD STAGE
+#========================================================
+
+- stage: Build
+  displayName: Build
+
+  jobs:
+
+  - job: BuildJob
+    displayName: Build Flask Application
+
+    steps:
+
+    - checkout: self
+
+    - task: UsePythonVersion@0
+      displayName: Use Python $(pythonVersion)
+      inputs:
+        versionSpec: $(pythonVersion)
+
+    - script: |
+        python --version
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+      displayName: Install Dependencies
+
+    # Debug step (remove later if you want)
+    - script: |
+        echo "Current Directory"
+        pwd
+        echo ""
+        echo "Repository Files"
+        ls -R
+      displayName: Verify Repository
+
+    - script: |
+        export PYTHONPATH=$(System.DefaultWorkingDirectory)
+        python -m pytest test --cov=. --cov-report=xml --junitxml=test-results.xml
+      displayName: Run Unit Tests
+
+    - task: PublishTestResults@2
+      displayName: Publish Test Results
+      condition: succeededOrFailed()
+      inputs:
+        testResultsFormat: JUnit
+        testResultsFiles: test-results.xml
+
+    - task: PublishCodeCoverageResults@2
+      displayName: Publish Code Coverage
+      inputs:
+        summaryFileLocation: coverage.xml
+
+    - task: ArchiveFiles@2
+      displayName: Create Deployment Package
+      inputs:
+        rootFolderOrFile: .
+        includeRootFolder: false
+        archiveType: zip
+        archiveFile: $(Build.ArtifactStagingDirectory)/app.zip
+        replaceExistingArchive: true
+
+    - task: PublishBuildArtifacts@1
+      displayName: Publish Artifact
+      inputs:
+        PathtoPublish: $(Build.ArtifactStagingDirectory)
+        ArtifactName: drop
+
+
+#========================================================
+# DEPLOY STAGE
+#========================================================
+
+- stage: Deploy
+  displayName: Deploy
+  dependsOn: Build
+  condition: succeeded()
+
+  jobs:
+
+  - deployment: DeployWebApp
+    displayName: Deploy to Azure App Service
+
+    environment: Development
+
+    strategy:
+
+      runOnce:
+
+        deploy:
+
+          steps:
+
+          - download: current
+            artifact: drop
+
+          - task: AzureWebApp@1
+            displayName: Deploy Flask App
+
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              appType: webAppLinux
+              appName: $(webAppName)
+              package: $(Pipeline.Workspace)/drop/app.zip
