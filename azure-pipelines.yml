@@ -53,7 +53,7 @@ stages:
 
     - script: |
         export PYTHONPATH=$(System.DefaultWorkingDirectory)
-        python -m pytest test --cov=. --cov-report=xml --junitxml=test-results.xml
+        python -m pytest tests --cov=. --cov-report=xml --junitxml=test-results.xml
       displayName: Run Unit Tests
 
     - task: PublishTestResults@2
